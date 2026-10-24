@@ -2,25 +2,57 @@
 
 SmartBrew is a browser-demonstrated machine-control UI prototype for a warm retro beverage-brewing station. The rectangular appliance screen is simulated in the browser; it does not control real pumps, grinders, heaters, payment terminals, or other hardware. It implements customer authentication and guest access, a searchable menu, deterministic Smart Picks, live drink customization, personal recipes, cart and order submission, simulated payment, QR/email/no-receipt handling, technician authentication, and a technician console for inventory, maintenance, and logs.
 
-## Technology and prerequisites
+## What you need before running SmartBrew
 
-- Node.js 20.19+ or 22.12+, with npm
-- React 18, TypeScript, and Vite
-- Plain CSS and browser `localStorage` for the persistent demo state
-- Open-Meteo public forecast API (no API key)
-- `qrcode` for real dynamic receipt QR codes
-- Vitest for focused domain unit tests
+SmartBrew runs in a web browser on Windows or macOS. You do **not** need a real coffee machine, payment card, database, or API key.
 
-## Install and run
+Install these two things:
+
+1. **Node.js 20.19 or newer** (or Node.js 22.12 or newer). Download the **LTS** version from [nodejs.org](https://nodejs.org/). npm is included with Node.js, so you do not need to install npm separately.
+2. **A modern web browser**, such as Google Chrome, Microsoft Edge, Safari, or Firefox.
+
+**Visual Studio Code is optional.** It is a convenient program for opening and editing the project, but SmartBrew can also be run from PowerShell/Command Prompt on Windows or Terminal on macOS.
+
+## Install and run (beginner steps)
+
+### Windows
+
+1. Install Node.js from [nodejs.org](https://nodejs.org/) using the default installation options.
+2. Download or copy this project folder to your computer.
+3. Open the project folder in File Explorer. Right-click an empty space inside the folder and choose **Open in Terminal**. If you use Visual Studio Code, open the folder there and choose **Terminal > New Terminal**.
+4. In the terminal, run these commands one at a time:
+
+   ```bash
+   npm install
+   npm run dev
+   ```
+
+5. The terminal will display a local address, usually `http://localhost:5173/`. Hold **Ctrl** and click that address, or copy it into your browser.
+6. Keep the terminal open while using the app. To stop the app, return to the terminal and press **Ctrl+C**.
+
+### macOS
+
+1. Install Node.js from [nodejs.org](https://nodejs.org/) using the **LTS** installer and the default options.
+2. Download or copy this project folder to your computer.
+3. Open **Terminal** (press **Command+Space**, type `Terminal`, and press Enter). Type `cd ` (including the space), drag the project folder into the Terminal window, and press Enter. If you use Visual Studio Code, open the folder there and choose **Terminal > New Terminal** instead.
+4. In the terminal, run these commands one at a time:
+
+   ```bash
+   npm install
+   npm run dev
+   ```
+
+5. The terminal will display a local address, usually `http://localhost:5173/`. Copy it into Safari, Chrome, Firefox, or another modern browser.
+6. Keep the terminal open while using the app. To stop the app, return to the terminal and press **Control+C**.
+
+`npm install` is needed only the first time, or after the project dependencies change. `npm run dev` starts the local development server. The other useful commands are:
 
 ```bash
-npm install
-npm run dev
 npm run build
 npm run test
 ```
 
-Open the Vite URL shown in the terminal. The payment processor, authentication, and email delivery are deliberately local simulations; no real money, card data, CVV, or password transmission is involved.
+`npm run build` checks that the app can be built for production. `npm run test` runs the automated tests. The payment processor, authentication, and email delivery are deliberately local simulations; no real money, card data, CVV, or password transmission is involved.
 
 ## Demo credentials
 
