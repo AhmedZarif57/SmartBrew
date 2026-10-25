@@ -10,12 +10,26 @@ type View = 'menu' | 'recipes' | 'cart' | 'account' | 'tech'
 const cities = { Stockholm: [59.3293, 18.0686], Västerås: [59.6099, 16.5448], Gothenburg: [57.7089, 11.9746] }
 const blankCustomization: Customization = { strength: 'Regular', temperature: 'Hot', milk: 'Dairy', syrup: 'None', syrupShots: 0 }
 
-/** Formats prototype currency consistently in Swedish kronor. */
+/**
+ * Formats a numeric prototype price in Swedish kronor.
+ *
+ * @param value - Price amount to display.
+ * @returns A whole-krona string with the SEK suffix.
+ */
 function sek(value: number): string { return `${value.toFixed(0)} SEK` }
-/** Converts a weather code into short human-readable copy. */
+/**
+ * Converts an Open-Meteo weather code into short human-readable copy.
+ *
+ * @param code - Numeric weather code returned by the weather service.
+ * @returns A compact condition label for the recommendation panel.
+ */
 function weatherCondition(code: number): string { if (code === 0) return 'Clear sky'; if (code <= 3) return 'Partly cloudy'; if (code <= 67) return 'Rain'; if (code <= 77) return 'Snow'; return 'Showers' }
 
-/** Renders the complete SmartBrew single-page application shell. */
+/**
+ * Renders the complete SmartBrew single-page application shell.
+ *
+ * @returns The machine-screen application JSX.
+ */
 export default function App() {
   const [state, setState] = useState(loadState)
   const [role, setRole] = useState<UserRole>('guest')
@@ -43,9 +57,9 @@ export default function App() {
   const [editingRecipe, setEditingRecipe] = useState<string | null>(null)
   const [techTab, setTechTab] = useState<'inventory' | 'maintenance' | 'logs'>('inventory')
 
-  /** Persists state after every mutable demo-data update. */
+  /** Persists the complete browser-local state after each mutable update. */
   useEffect(() => { saveState(state) }, [state])
-  /** Loads current weather for the selected city and gracefully enables fallback ranking. */
+  /** Loads selected-city weather and enables preference-only fallback on request failure. */
   useEffect(() => { const [latitude, longitude] = cities[city]; setWeatherError(false); fetch(`https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=temperature_2m,weather_code`).then(response => { if (!response.ok) throw new Error('weather'); return response.json() }).then(data => setWeather({ city, temperature: data.current.temperature_2m, condition: weatherCondition(data.current.weather_code) })).catch(() => { setWeather(null); setWeatherError(true) }) }, [city])
 
   const filtered = useMemo(() => DRINKS.filter(drink => (category === 'All' || drink.category === category) && drink.name.toLowerCase().includes(search.toLowerCase())), [category, search])
@@ -53,59 +67,119 @@ export default function App() {
   const weatherMessage = recommendationWeatherMessage(city, weather?.temperature ?? null, weatherError, !weather && !weatherError)
   const currentShortages = selected ? stockShortages(selected, custom, state.inventory) : []
   const maintenanceLock = !state.machine.operational
+  /**
+   * Replaces the complete in-memory demo state.
+   *
+   * @param next - New state snapshot.
+   * @returns Nothing; updates React state.
+   */
   const updateState = (next: typeof state): void => setState(next)
   const displayedTotal = cart.length ? cartTotal(cart) : lastOrder?.total ?? 0
 
-  /** Shows a transient, accessible status message to the customer. */
+  /**
+   * Shows a transient, accessible status message.
+   *
+   * @param message - Text announced in the status toast.
+   * @returns Nothing; updates React state and schedules dismissal.
+   */
   function flash(message: string): void { setNotice(message); window.setTimeout(() => setNotice(''), 4500) }
-  /** Clears temporary order UI when the active role changes. */
+  /** Clears temporary order and receipt UI when the active role changes. */
   function clearOrderSession(): void { setCart([]); setSelected(null); setCheckout(false); setLastOrder(null); setReceipt(null); setQr(''); setRecipeName(''); setEditingRecipe(null) }
-  /** Updates the signed-in customer's preferences and persists them. */
+  /**
+   * Updates and persists signed-in customer preferences.
+   *
+   * @param patch - Partial preference fields to merge into the profile.
+   * @returns Nothing; updates state and shows confirmation.
+   */
   function updatePreferences(patch: Partial<Preferences>): void { updateState({ ...state, customer: { ...state.customer, preferences: { ...state.customer.preferences, ...patch } } }); flash('Preferences saved.') }
-  /** Attempts either seeded customer or technician authentication without storing payment credentials. */
+  /**
+   * Attempts seeded customer or technician authentication without storing payment credentials.
+   *
+   * @param event - Form submit event whose default navigation is prevented.
+   * @returns Nothing; changes role, logs the attempt, or enables guest fallback.
+   */
   function signIn(event: FormEvent): void { event.preventDefault(); const isTech = authMode === 'technician'; const good = isTech ? authEmail === 'tech@smartbrew.demo' && authPassword === 'Tech123!' : authEmail === state.customer.email && authPassword === state.customer.password; if (good) { clearOrderSession(); setRole(isTech ? 'technician' : 'customer'); setView(isTech ? 'tech' : 'menu'); setAuthMode(null); setFailed(0); updateState({ ...state, logs: addLog(state.logs, 'Info', 'Auth', `${isTech ? 'Technician' : 'Customer'} signed in.`) }); flash(`Welcome, ${isTech ? 'Technician' : state.customer.name}.`) } else { const next = failed + 1; setFailed(next); if (next >= 3) { clearOrderSession(); setRole('guest'); setAuthMode(null); setFailed(0); flash(isTech ? 'Three failed attempts. Technician access was not granted.' : 'Three failed attempts. Guest mode enabled; sign in for personalized features.') } else flash('Those credentials do not match the demo account.') } }
-  /** Signs out the current role and writes an auditable event. */
+  /** Signs out the current role, writes an audit event, and returns to guest menu mode. */
   function signOut(): void { updateState({ ...state, logs: addLog(state.logs, 'Info', 'Auth', `${role} signed out.`) }); clearOrderSession(); setRole('guest'); setView('menu'); flash('Signed out.') }
-  /** Opens a drink customizer with valid defaults for its recipe. */
+  /**
+   * Opens a drink customizer with valid defaults for the selected catalog drink.
+   *
+   * @param drink - Catalog drink selected by the customer.
+   * @returns Nothing; initializes customizer state.
+   */
   function openDrink(drink: Drink): void { setSelected(drink); setCustom({ ...blankCustomization, temperature: drink.supportsIced ? 'Hot' : 'Hot', milk: drink.requiresMilk ? 'Dairy' : 'None' }); setView('menu') }
-  /** Adds a validated customized drink to the cart without consuming inventory. */
+  /** Adds the selected validated customization to the cart without consuming inventory. */
   function addToCart(): void { if (!selected || maintenanceLock || currentShortages.length) return; const item: CartItem = { id: makeId('cart'), drinkId: selected.id, customization: { ...custom }, quantity: 1, unitPrice: calculatePrice(selected, custom), calories: calculateCalories(selected, custom) }; setCart([...cart, item]); setSelected(null); flash(`${selected.name} added to cart.`) }
-  /** Changes a cart line quantity while keeping it positive. */
+  /**
+   * Changes a cart line quantity while keeping it at least one.
+   *
+   * @param id - Cart line identifier to update.
+   * @param delta - Signed quantity change, normally plus or minus one.
+   * @returns Nothing; updates cart state.
+   */
   function changeQuantity(id: string, delta: number): void { setCart(cart.map(item => item.id === id ? { ...item, quantity: Math.max(1, item.quantity + delta) } : item)) }
-  /** Creates an approved order only after revalidating and deducting all stock exactly once. */
+  /** Validates stock, simulates payment, and creates an approved order with one stock deduction. */
   function pay(): void { if (!cart.length || maintenanceLock) return; const shortages = cart.flatMap(item => { const drink = DRINKS.find(entry => entry.id === item.drinkId)!; return stockShortages(drink, item.customization, state.inventory, item.quantity) }); if (shortages.length) { flash(`Checkout stopped: ${shortages.join('; ')}.`); setCheckout(false); return } if (paymentOutcome === 'Declined') { updateState({ ...state, logs: addLog(state.logs, 'Warning', 'Payment', 'Payment declined; no stock deducted.') }); flash('Payment declined. No drink was prepared and no stock was deducted.'); return } let inventory = state.inventory; cart.forEach(item => { inventory = deductStock(inventory, DRINKS.find(drink => drink.id === item.drinkId)!, item.customization, item.quantity) }); const order: Order = { id: `SB-${new Date().getFullYear()}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`, timestamp: new Date().toISOString(), items: cart, total: cartTotal(cart), paymentMethod, paymentStatus: 'Approved', identity: role === 'customer' ? state.customer.id : 'Guest', status: 'Completed (demo brew)' }; updateState({ ...state, inventory, orders: [order, ...state.orders], customer: role === 'customer' ? { ...state.customer, orders: [order, ...state.customer.orders] } : state.customer, logs: addLog(state.logs, 'Info', 'Order', `${order.id} completed with simulated payment.`) }); setLastOrder(order); setReceipt(null); setQr(''); setCart([]); setCheckout(false); setView('cart'); flash('Approved. Demo brew completed; stock updated once.') }
-  /** Saves a named recipe or updates the recipe currently being edited. */
+  /** Saves a named customer recipe or updates the recipe currently being edited. */
   function saveRecipe(): void { if (role !== 'customer' || !selected || !recipeName.trim()) { flash('Sign in and enter a recipe name before saving.'); return } const recipe = { id: editingRecipe ?? makeId('recipe'), name: recipeName.trim(), drinkId: selected.id, customization: { ...custom } }; const recipes = editingRecipe ? state.customer.recipes.map(item => item.id === editingRecipe ? recipe : item) : [...state.customer.recipes, recipe]; updateState({ ...state, customer: { ...state.customer, recipes } }); setRecipeName(''); setEditingRecipe(null); setSelected(null); flash(editingRecipe ? 'Recipe updated.' : 'Recipe saved.') }
-  /** Loads a saved recipe into the customizer after current stock validation. */
+  /**
+   * Loads a saved recipe into the cart after current stock validation.
+   *
+   * @param recipe - Saved recipe selected from the customer library.
+   * @returns Nothing; adds an available recipe to the cart or reports shortages.
+   */
   function reorder(recipe: typeof state.customer.recipes[number]): void { const drink = DRINKS.find(item => item.id === recipe.drinkId)!; const shortages = stockShortages(drink, recipe.customization, state.inventory); if (shortages.length) flash(`Cannot reorder: ${shortages.join('; ')}.`); else { const item: CartItem = { id: makeId('cart'), drinkId: drink.id, customization: { ...recipe.customization }, quantity: 1, unitPrice: calculatePrice(drink, recipe.customization), calories: calculateCalories(drink, recipe.customization) }; setCart([...cart, item]); setView('cart'); flash(`${drink.name} added to cart from My recipes.`) } }
-  /** Updates an inventory line with a validated refill or correction and records the change. */
+  /**
+   * Updates an inventory line with a validated refill or correction.
+   *
+   * @param id - Inventory item identifier to change.
+   * @param amount - Non-negative refill amount or replacement quantity.
+   * @param correction - When true, replace quantity; otherwise add to it.
+   * @returns Nothing; persists the inventory change and audit log entry.
+   */
   function changeInventory(id: string, amount: number, correction = false): void { if (!Number.isFinite(amount) || amount < 0) { flash('Enter a valid non-negative amount.'); return } const inventory = state.inventory.map(item => item.id === id ? { ...item, quantity: correction ? Math.min(item.capacity, amount) : Math.min(item.capacity, item.quantity + amount) } : item); updateState({ ...state, inventory, logs: addLog(state.logs, 'Info', 'Inventory', `${correction ? 'Corrected' : 'Refilled'} ${inventory.find(item => item.id === id)?.name}.`) }); flash('Inventory updated.') }
-  /** Resets a maintenance bin, preserving the other machine status. */
+  /**
+   * Resets one maintenance bin after technician confirmation.
+   *
+   * @param bin - Machine status field representing the grounds or liquid bin.
+   * @returns Nothing; clears the selected bin and restores operational status.
+   */
   function resetBin(bin: 'groundsFill' | 'liquidFill'): void { if (!window.confirm('Confirm maintenance action?')) return; updateState({ ...state, machine: { ...state.machine, [bin]: 0, operational: true }, logs: addLog(state.logs, 'Info', 'Maintenance', `${bin === 'groundsFill' ? 'Grounds bin' : 'Waste-liquid tray'} emptied.`) }); flash('Maintenance state cleared.') }
-  /** Simulates a technician diagnostic based on stock and bin status. */
+  /** Simulates a technician diagnostic from stock and maintenance thresholds. */
   function diagnostic(): void { const pass = state.machine.groundsFill < 85 && state.machine.liquidFill < 85 && state.inventory.every(item => item.quantity > 0); updateState({ ...state, logs: addLog(state.logs, pass ? 'Info' : 'Warning', 'Maintenance', `Diagnostic ${pass ? 'passed' : 'flagged service needs'}.`) }); flash(pass ? 'Diagnostic passed.' : 'Diagnostic flagged stock or maintenance needs.') }
-  /** Produces and displays a QR receipt for the completed order. */
+  /** Produces and displays a QR receipt for the completed simulated order. */
   async function chooseQr(): Promise<void> { if (!lastOrder) return; setReceipt({ orderId: lastOrder.id, choice: 'QR code' }); setQr(await createReceiptQr(lastOrder)); updateState({ ...state, logs: addLog(state.logs, 'Info', 'Receipt', `QR receipt selected for ${lastOrder.id}.`) }) }
 
-  /** Renders the shared header and role-aware navigation. */
+  /** Renders the shared header and role-aware navigation; returns header JSX. */
   function Header(): JSX.Element { return <header className="topbar"><button className="wordmark" onClick={() => setView('menu')}>SMARTBREW <span>/ BREW STATION 01</span></button><div className={`machine-pill ${maintenanceLock ? 'danger' : ''}`}><i /> {maintenanceLock ? 'SERVICE REQUIRED' : role === 'technician' ? 'SERVICE MODE' : 'READY'}</div><nav><button className={view === 'menu' ? 'active' : ''} onClick={() => setView('menu')}>Order</button><button className={view === 'recipes' ? 'active' : ''} onClick={() => role === 'customer' ? setView('recipes') : flash('Sign in to manage personal recipes.')}>My recipes</button><button className={view === 'cart' ? 'active' : ''} onClick={() => setView('cart')}>Order review <b>{cart.length}</b></button>{role === 'technician' && <button className={view === 'tech' ? 'active' : ''} onClick={() => setView('tech')}>Service console</button>}</nav><div className="user-actions">{role === 'customer' ? <><span>{state.customer.name}</span><button onClick={signOut}>Sign out</button></> : role === 'technician' ? <><span>Technician</span><button onClick={signOut}>Exit service</button></> : <><button onClick={() => { setAuthMode('customer'); setAuthEmail('customer@smartbrew.demo'); setAuthPassword('brew123') }}>Customer sign in</button><button className="quiet" onClick={() => setAuthMode('technician')}>Technician / service</button></>}</div></header> }
-  /** Renders the catalog and smart recommendation panels. */
+  /** Renders catalog and Smart Picks panels; returns menu JSX. */
   function Menu(): JSX.Element { return <><section className="hero"><div><p className="eyebrow">WELCOME / CUSTOMER MODE</p><h1>Choose your<br /><em>next brew.</em></h1><p className="lede">Touch a drink to configure it. This station is a browser-based brewing simulation.</p></div><div className="hero-meta"><span>09 drink programs</span><span>SEK pricing</span><span>SIMULATION ONLY</span></div></section><section className="smart-picks"><div className="section-heading"><div><p className="eyebrow">SMART PICKS / RECOMMENDATIONS</p><h2>Suggested for this station</h2></div><div className="weather">{weatherMessage}</div></div><div className="recommendations">{recommendations.length ? recommendations.map((item, index) => <button type="button" className="recommendation" key={item.drink.id} onClick={() => openDrink(item.drink)}><span className="tag">{`0${index + 1} ${index === 0 ? 'BEST MATCH' : index === 1 ? 'ALSO A MATCH' : 'ALTERNATIVE'}`}</span><strong>{item.drink.name}</strong><small>{item.reason}</small><div className="drink-details"><span>{sek(item.drink.price)}</span><span>{item.drink.calories} kcal est.</span></div><span>Configure →</span></button>) : <div className="empty">No drinks are currently available for recommendation.</div>}</div>{(state.customer.preferences.temperature === 'Iced' && recommendations.some(item => item.drink.id !== 'iced-latte')) && <p className="recommendation-note">This menu has only one iced drink, so the remaining picks are closest alternatives.</p>}{state.customer.preferences.flavor === 'Sweet' && state.customer.preferences.goal === 'Lower calorie' && <p className="recommendation-note">Sweet, low-calorie options are limited in this menu. These are the closest available matches.</p>}<div className="preference-strip"><span>Adjust recommendations</span><select aria-label="Taste preference" value={state.customer.preferences.flavor} onChange={e => updatePreferences({ flavor: e.target.value as Preferences['flavor'] })}><option>Balanced</option><option>Sweet</option><option>Strong</option></select><select aria-label="Temperature preference" value={state.customer.preferences.temperature} onChange={e => updatePreferences({ temperature: e.target.value as Preferences['temperature'] })}><option>Iced</option><option>Any</option><option>Hot</option></select><select aria-label="Calorie preference" value={state.customer.preferences.goal} onChange={e => updatePreferences({ goal: e.target.value as Preferences['goal'] })}><option>No preference</option><option value="Lower calorie">Low calorie</option></select><select aria-label="Weather city" value={city} onChange={e => setCity(e.target.value as keyof typeof cities)}>{Object.keys(cities).map(name => <option key={name}>{name}</option>)}</select></div></section><section className="menu-section"><div className="section-heading"><div><p className="eyebrow">DRINK PROGRAMS</p><h2>Select a drink</h2></div><input className="search" placeholder="Find a drink" value={search} onChange={e => setSearch(e.target.value)} /></div><div className="filters">{['All', 'Coffee', 'Signature', 'Iced', 'Other'].map(item => <button type="button" className={category === item ? 'selected' : ''} onClick={() => setCategory(item)} key={item}>{item}</button>)}</div><div className="drink-grid">{filtered.map(drink => { const unavailable = stockShortages(drink, { ...blankCustomization, milk: drink.requiresMilk ? 'Dairy' : 'None' }, state.inventory).length > 0; return <article className="drink-card" key={drink.id}><div className="drink-number">0{DRINKS.indexOf(drink) + 1}</div><div><p className="eyebrow">{drink.category}</p><h3>{drink.name}</h3><p>{drink.description}</p><div className="drink-details"><span>{sek(drink.price)}</span><span>{drink.calories} kcal est.</span></div>{unavailable && <small className="unavailable">Unavailable: stock is low</small>}<button type="button" disabled={maintenanceLock || unavailable} onClick={() => openDrink(drink)}>{maintenanceLock ? 'Service required' : unavailable ? 'Unavailable' : 'Configure'}</button></div></article>})}</div><button type="button" className="nl-entry" onClick={() => flash('Natural-language ordering is Coming Soon. For now, build your drink using the manual controls.')}>Natural-language ordering <span>Coming Soon</span><b>→</b></button></section>{selected && CustomizerContent()}</> }
-  /** Renders the selected drink's live customization panel. */
+  /** Renders the selected drink's live customization panel; returns customizer JSX. */
   function CustomizerContent(): JSX.Element { const maxShots = Math.min(3, Math.floor((state.inventory.find(item => item.id === (custom.syrup === 'None' ? 'vanilla' : custom.syrup.toLowerCase()))?.quantity ?? 0) / 10)); return <div className="overlay"><section className="modal customizer"><button type="button" className="close" onClick={() => setSelected(null)}>×</button><p className="eyebrow">CUSTOMIZE / {selected?.category}</p><h2>{selected?.name}</h2><p>{selected?.description}</p><div className="custom-grid"><label>Strength<select disabled={!selected?.hasCoffee} value={custom.strength} onChange={e => setCustom({ ...custom, strength: e.target.value as Customization['strength'] })}><option>Mild</option><option>Regular</option><option>Strong</option></select></label><label>Temperature<select disabled={!selected?.supportsIced} value={custom.temperature} onChange={e => setCustom({ ...custom, temperature: e.target.value as Customization['temperature'] })}><option>Hot</option><option>Iced</option></select></label><label>Milk<select disabled={!selected?.requiresMilk} value={custom.milk} onChange={e => setCustom({ ...custom, milk: e.target.value as Customization['milk'] })}><option>Dairy</option><option>Oat</option><option>Almond</option><option>None</option></select></label><label>Syrup<select value={custom.syrup} onChange={e => setCustom({ ...custom, syrup: e.target.value as Customization['syrup'], syrupShots: 0 })}><option>None</option><option>Vanilla</option><option>Caramel</option><option>Chocolate</option></select></label><label>Syrup shots<select value={custom.syrupShots} onChange={e => setCustom({ ...custom, syrupShots: Number(e.target.value) })}>{[0, 1, 2, 3].filter(number => number <= (custom.syrup === 'None' ? 3 : maxShots)).map(number => <option key={number}>{number}</option>)}</select>{custom.syrup !== 'None' && maxShots < 3 && <small>Stock limits this syrup to {maxShots} shots.</small>}</label></div><div className="recipe-summary"><span>{custom.strength} · {custom.temperature} · {custom.milk} milk · {custom.syrupShots ? `${custom.syrupShots} × ${custom.syrup}` : 'no syrup'}</span><strong>{sek(calculatePrice(selected!, custom))} <small>/ {calculateCalories(selected!, custom)} kcal estimated</small></strong></div>{currentShortages.length > 0 && <div className="error-box">Unavailable: {currentShortages.join('; ')}.</div>}<div className="modal-actions"><button type="button" className="secondary" onClick={() => setSelected(null)}>Cancel</button>{role === 'customer' && <button type="button" className="secondary" onClick={() => saveRecipe()}>Save recipe</button>}<button type="button" disabled={currentShortages.length > 0 || maintenanceLock} onClick={addToCart}>Add to cart</button></div>{role === 'customer' && <label className="recipe-name">Recipe name (for saving)<input value={recipeName} onChange={e => setRecipeName(e.target.value)} placeholder="e.g. Morning focus" /></label>}</section></div> }
-  /** Renders cart, checkout controls and receipt preferences. */
+  /** Renders cart, checkout controls, and receipt preferences; returns cart JSX. */
   function Cart(): JSX.Element { return <section className="page-section"><div className="section-heading"><div><p className="eyebrow">ORDER / REVIEW</p><h2>Your order</h2></div><span className="total-large">{sek(displayedTotal)}</span></div>{lastOrder && !cart.length && <ReceiptPanel />}{!cart.length && !lastOrder && <div className="empty"><h3>Your cart is ready for a good idea.</h3><p>Add a drink from the menu to begin. Nothing is deducted until approved payment.</p><button type="button" onClick={() => setView('menu')}>Browse menu</button></div>}{cart.length > 0 && <><div className="cart-list">{cart.map(item => { const drink = DRINKS.find(entry => entry.id === item.drinkId)!; return <div className="cart-line" key={item.id}><div><strong>{drink.name}</strong><p>{item.customization.strength} · {item.customization.temperature} · {item.customization.milk} milk · {item.customization.syrupShots ? `${item.customization.syrupShots} × ${item.customization.syrup}` : 'no syrup'}</p></div><div className="quantity"><button type="button" onClick={() => changeQuantity(item.id, -1)}>−</button><span>{item.quantity}</span><button type="button" onClick={() => changeQuantity(item.id, 1)}>+</button></div><strong>{sek(item.unitPrice * item.quantity)}</strong><button type="button" className="remove" onClick={() => setCart(cart.filter(line => line.id !== item.id))}>Remove</button></div>})}</div><div className="checkout-box"><div><p className="eyebrow">SIMULATED PAYMENT</p><h3>ExternalPaymentSystem boundary</h3><p>No real money, card details or credentials are used in this prototype.</p></div><button type="button" onClick={() => setCheckout(true)} disabled={maintenanceLock}>{maintenanceLock ? 'Service required' : 'Continue to payment'}</button></div></>}{checkout && <div className="overlay"><section className="modal"><button type="button" className="close" onClick={() => setCheckout(false)}>×</button><p className="eyebrow">CHECKOUT / DEMO ONLY</p><h2>Confirm {sek(cartTotal(cart))}</h2><label>Payment method<select value={paymentMethod} onChange={e => setPaymentMethod(e.target.value)}><option>Contactless/chip card (simulated)</option><option>Digital wallet (simulated)</option><option>Prepaid/employee card (simulated)</option></select></label><label>Demo-only payment outcome<select value={paymentOutcome} onChange={e => setPaymentOutcome(e.target.value as 'Approved' | 'Declined')}><option>Approved</option><option>Declined</option></select></label><p className="warning">Approval deducts stock once and creates a completed demo brew. Decline keeps your cart intact.</p><button type="button" onClick={pay}>Pay {sek(cartTotal(cart))} (simulated)</button></section></div>}</section> }
-  /** Renders the immutable receipt associated with the last approved order. */
+  /** Renders the receipt associated with the last approved order; returns receipt JSX. */
   function ReceiptPanel(): JSX.Element { return <div className="receipt-panel"><div><p className="eyebrow">PAID / DEMO RECEIPT</p><h3>{lastOrder!.id}</h3><p>{new Date(lastOrder!.timestamp).toLocaleString()} · {lastOrder!.paymentMethod}</p>{lastOrder!.items.map(item => <p key={item.id}>{item.quantity} × {DRINKS.find(d => d.id === item.drinkId)?.name} — {sek(item.unitPrice * item.quantity)}</p>)}<strong>Total {sek(lastOrder!.total)}</strong>{receipt?.choice === 'Email' && <p className="success">Receipt prepared for {receipt.email} (email delivery is simulated in this prototype).</p>}<div className="modal-actions"><button onClick={() => window.print()}>Print receipt</button><button className="secondary" onClick={() => setReceipt({ orderId: lastOrder!.id, choice: 'No receipt' })}>No receipt</button><button className="secondary" onClick={() => { const email = window.prompt('Receipt email'); if (email && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) setReceipt({ orderId: lastOrder!.id, choice: 'Email', email }); else if (email) flash('Enter a valid email address.') }}>Email receipt</button><button className="secondary" onClick={chooseQr}>QR code</button></div></div>{qr && <img className="qr" src={qr} alt={`QR receipt for ${lastOrder!.id}`} />}</div> }
-  /** Renders customer saved recipes with protected management actions. */
+  /** Renders customer saved recipes and protected management actions; returns recipe JSX. */
   function Recipes(): JSX.Element { return <section className="page-section"><p className="eyebrow">PERSONAL LIBRARY</p><h2>My recipes</h2>{role !== 'customer' || !state.customer.recipes.length ? <div className="empty"><h3>{role !== 'customer' ? 'Sign in to make it yours.' : 'Your recipe library is empty.'}</h3><p>{role !== 'customer' ? 'Personal recipes and preferences stay private to your customer account.' : 'Save a customized drink and it will appear here for one-tap reordering.'}</p></div> : <div className="recipe-list">{state.customer.recipes.map(recipe => <div className="recipe-row" key={recipe.id}><div><strong>{recipe.name}</strong><p>{DRINKS.find(d => d.id === recipe.drinkId)?.name} · {recipe.customization.strength} · {recipe.customization.milk} milk · {recipe.customization.syrupShots} syrup shots</p></div><button onClick={() => reorder(recipe)}>Order again</button><button className="secondary" onClick={() => { setSelected(DRINKS.find(d => d.id === recipe.drinkId)!); setCustom(recipe.customization); setRecipeName(recipe.name); setEditingRecipe(recipe.id) }}>Edit</button><button className="danger-button" onClick={() => window.confirm('Delete this saved recipe?') && updateState({ ...state, customer: { ...state.customer, recipes: state.customer.recipes.filter(item => item.id !== recipe.id) } })}>Delete</button></div>)}</div>}</section> }
-  /** Renders technician-only inventory, maintenance and log controls. */
+  /** Renders technician-only inventory, maintenance, and log controls; returns console JSX. */
   function Technician(): JSX.Element { if (role !== 'technician') return <section className="page-section"><div className="empty"><h3>Technician access required.</h3><p>This console is protected by role state; customer and guest actions cannot execute technician operations.</p></div></section>; return <section className="page-section tech-page"><div className="section-heading"><div><p className="eyebrow">ROLE / TECHNICIAN</p><h2>Station console</h2></div><div className="tabs">{(['inventory', 'maintenance', 'logs'] as const).map(tab => <button className={techTab === tab ? 'selected' : ''} onClick={() => setTechTab(tab)} key={tab}>{tab}</button>)}</div></div>{techTab === 'inventory' && <div className="tech-grid">{state.inventory.map(item => <InventoryRow key={item.id} item={item} onChange={changeInventory} />)}</div>}{techTab === 'maintenance' && <div className="maintenance-grid"><div className="status-card"><p className="eyebrow">MACHINE STATUS</p><h3>{maintenanceLock ? 'Maintenance required' : 'Operational'}</h3><p>Grounds bin: {state.machine.groundsFill}% · Waste-liquid tray: {state.machine.liquidFill}%</p><button onClick={() => resetBin('groundsFill')}>Empty grounds bin</button><button onClick={() => resetBin('liquidFill')}>Empty waste-liquid tray</button><button onClick={diagnostic}>Run diagnostic check</button><button className="secondary" onClick={() => updateState({ ...state, machine: { ...state.machine, groundsFill: 92, operational: false }, logs: addLog(state.logs, 'Warning', 'Maintenance', 'Technician simulated grounds bin near capacity.') })}>Simulate bin near capacity</button></div></div>}{techTab === 'logs' && <Logs logs={state.logs} />}</section> }
-  /** Renders one editable inventory refill and correction row. */
+  /**
+   * Renders one editable inventory refill and correction row.
+   *
+   * @param item - Inventory record displayed by the row.
+   * @param onChange - Callback receiving the item ID, amount, and correction mode.
+   * @returns The inventory row JSX.
+   */
   function InventoryRow({ item, onChange }: { item: typeof state.inventory[number]; onChange: (id: string, amount: number, correction?: boolean) => void }): JSX.Element { const [amount, setAmount] = useState(''); const low = item.quantity / item.capacity < .2; return <div className="inventory-row"><div><strong>{item.name}</strong><span className={low ? 'low' : ''}>{low ? 'Low stock' : 'Ready'}</span><div className="progress"><i style={{ width: `${item.quantity / item.capacity * 100}%` }} /></div></div><b>{item.quantity} / {item.capacity} {item.unit}</b><input aria-label={`${item.name} amount`} type="number" min="0" value={amount} onChange={e => setAmount(e.target.value)} placeholder="Amount" /><button onClick={() => { onChange(item.id, Number(amount)); setAmount('') }}>Refill</button><button className="secondary" onClick={() => { onChange(item.id, Number(amount), true); setAmount('') }}>Correct to</button></div> }
-  /** Filters and renders newest-first technician system logs. */
+  /**
+   * Filters and renders newest-first technician system logs.
+   *
+   * @param logs - Newest-first system events to filter.
+   * @returns Filter controls and matching log row JSX.
+   */
   function Logs({ logs }: { logs: typeof state.logs }): JSX.Element { const [filter, setFilter] = useState('All'); const [query, setQuery] = useState(''); const visible = logs.filter(log => (filter === 'All' || log.level === filter) && log.message.toLowerCase().includes(query.toLowerCase())); return <div className="logs"><div className="log-filters"><select value={filter} onChange={e => setFilter(e.target.value)}><option>All</option><option>Info</option><option>Warning</option><option>Error</option></select><input placeholder="Search logs" value={query} onChange={e => setQuery(e.target.value)} /><button className="secondary" onClick={() => { setFilter('All'); setQuery('') }}>Clear filters</button></div>{visible.length ? visible.map(log => <div className="log-row" key={log.id}><span>{new Date(log.timestamp).toLocaleString()}</span><b className={log.level.toLowerCase()}>{log.level}</b><span>{log.category}</span><p>{log.message}</p></div>) : <div className="empty">No events match these filters.</div>}</div> }
-  /** Renders the sign-in dialog for either protected role. */
+  /** Renders the sign-in dialog for either protected role; returns modal JSX or null. */
   function Auth(): JSX.Element | null { return authMode ? <div className="overlay"><form className="modal auth" onSubmit={signIn}><button type="button" className="close" onClick={() => setAuthMode(null)}>×</button><p className="eyebrow">{authMode === 'technician' ? 'TECHNICIAN ACCESS' : 'CUSTOMER ACCESS'}</p><h2>{authMode === 'technician' ? 'Open the station console.' : 'Welcome back.'}</h2><label>Email<input type="email" value={authEmail} onChange={e => setAuthEmail(e.target.value)} required /></label><label>Password<input type="password" value={authPassword} onChange={e => setAuthPassword(e.target.value)} required /></label><button type="submit">Sign in</button><button type="button" className="secondary" onClick={() => { setAuthEmail(authMode === 'technician' ? 'tech@smartbrew.demo' : 'customer@smartbrew.demo'); setAuthPassword(authMode === 'technician' ? 'Tech123!' : 'brew123') }}>Use demo {authMode}</button></form></div> : null }
   /** Resets the demo after explicit confirmation from the presentation user. */
   function resetDemo(): void { if (window.confirm('Reset all SmartBrew demo data?')) { updateState(resetState()); clearOrderSession(); setRole('guest'); setView('menu'); flash('Demo data reset.') } }

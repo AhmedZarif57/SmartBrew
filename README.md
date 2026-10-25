@@ -1,97 +1,106 @@
 # SmartBrew
 
-SmartBrew is a browser-demonstrated machine-control UI prototype for a warm retro beverage-brewing station. The rectangular appliance screen is simulated in the browser; it does not control real pumps, grinders, heaters, payment terminals, or other hardware. It implements customer authentication and guest access, a searchable menu, deterministic Smart Picks, live drink customization, personal recipes, cart and order submission, simulated payment, QR/email/no-receipt handling, technician authentication, and a technician console for inventory, maintenance, and logs.
+SmartBrew is a browser-demonstrated UI prototype for a retro smart beverage-brewing machine. The browser is the presentation and demonstration environment; SmartBrew is not an online coffee shop or production e-commerce service. Customer and technician workflows are represented on the simulated machine screen.
 
-## What you need before running SmartBrew
+Customers can browse, customize, save, and order drinks. Technicians can sign in to maintain the simulated station. Authentication, payment, brewing, email delivery, inventory, logs, and receipts are demonstrations stored in the browser. The only external request is an optional weather request to Open-Meteo; QR images are generated locally by the `qrcode` package. No payment processor, email provider, hardware, database, or LLM is called.
 
-SmartBrew runs in a web browser on Windows or macOS. You do **not** need a real coffee machine, payment card, database, or API key.
+## Implemented functionalities
 
-Install these two things:
+1. **Customer authentication and guest access** - seeded customer sign-in, sign-out, three-attempt guest fallback, and guest ordering.
+2. **Menu and availability** - searchable, category-filtered drink catalogue with stock and maintenance availability feedback.
+3. **Recommendations** - deterministic Smart Picks using taste, temperature, calorie goal, available inventory, optional current weather, and a stable catalogue order.
+4. **Recommendation preferences** - customer preference controls for taste, temperature, and calorie goal, persisted in localStorage.
+5. **Customization and ingredient validation** - strength, temperature, milk, syrup, and shots affect price/calories; stock is checked before cart addition and again at payment.
+6. **Saved customer recipes** - customer-only named recipes can be saved, edited, deleted, and reordered.
+7. **Order creation and review** - customized and unsaved menu drinks can be added, quantities changed, and reviewed before payment.
+8. **Checkout, payment, and receipts** - payment outcome is simulated; approval deducts stock once, decline does not. QR generation is local, email is only a confirmation simulation, and print uses the browser dialog.
+9. **Technician authentication and role restriction** - technician credentials reveal the protected service console; customer and guest roles cannot execute service actions.
+10. **Technician operations** - refill/correct inventory, simulate and clear maintenance state, run diagnostics, and filter/search system logs.
 
-1. **Node.js 20.19 or newer** (or Node.js 22.12 or newer). Download the **LTS** version from [nodejs.org](https://nodejs.org/). npm is included with Node.js, so you do not need to install npm separately.
-2. **A modern web browser**, such as Google Chrome, Microsoft Edge, Safari, or Firefox.
+Natural-language ordering is **Coming Soon / not implemented with a working LLM**. The visible control deliberately explains that manual configuration is currently required.
 
-**Visual Studio Code is optional.** It is a convenient program for opening and editing the project, but SmartBrew can also be run from PowerShell/Command Prompt on Windows or Terminal on macOS.
+## Environment and prerequisites
 
-## Install and run (beginner steps)
+- Node.js 20 LTS is recommended (Node.js 18+ is compatible with Vite 6; Node 20 or 22 is the supported coursework choice).
+- npm is included with Node.js.
+- A current Chrome, Edge, Firefox, or Safari browser is assumed.
+- React 18, React DOM 18, TypeScript 5, Vite 6, Vitest 5, and `qrcode` are the important libraries.
+- Open-Meteo is requested from the browser for weather recommendations. If it is unavailable, recommendations continue without weather.
+- No environment variables are required. Do not add credentials to this repository.
 
-### Windows
+## Installation and setup
 
-1. Install Node.js from [nodejs.org](https://nodejs.org/) using the default installation options.
-2. Download or copy this project folder to your computer.
-3. Open the project folder in File Explorer. Right-click an empty space inside the folder and choose **Open in Terminal**. If you use Visual Studio Code, open the folder there and choose **Terminal > New Terminal**.
-4. In the terminal, run these commands one at a time:
-
-   ```bash
-   npm install
-   npm run dev
-   ```
-
-5. The terminal will display a local address, usually `http://localhost:5173/`. Hold **Ctrl** and click that address, or copy it into your browser.
-6. Keep the terminal open while using the app. To stop the app, return to the terminal and press **Ctrl+C**.
-
-### macOS
-
-1. Install Node.js from [nodejs.org](https://nodejs.org/) using the **LTS** installer and the default options.
-2. Download or copy this project folder to your computer.
-3. Open **Terminal** (press **Command+Space**, type `Terminal`, and press Enter). Type `cd ` (including the space), drag the project folder into the Terminal window, and press Enter. If you use Visual Studio Code, open the folder there and choose **Terminal > New Terminal** instead.
-4. In the terminal, run these commands one at a time:
-
-   ```bash
-   npm install
-   npm run dev
-   ```
-
-5. The terminal will display a local address, usually `http://localhost:5173/`. Copy it into Safari, Chrome, Firefox, or another modern browser.
-6. Keep the terminal open while using the app. To stop the app, return to the terminal and press **Control+C**.
-
-`npm install` is needed only the first time, or after the project dependencies change. `npm run dev` starts the local development server. The other useful commands are:
+Clone or download the repository, then run:
 
 ```bash
-npm run build
-npm run test
+git clone https://github.com/AhmedZarif57/SmartBrew.git
+cd SmartBrew
+npm ci
 ```
 
-`npm run build` checks that the app can be built for production. `npm run test` runs the automated tests. The payment processor, authentication, and email delivery are deliberately local simulations; no real money, card data, CVV, or password transmission is involved.
+`npm ci` uses the committed `package-lock.json` to reproduce the dependency tree. Use `npm install` when intentionally updating dependencies. Local `.env` files are ignored; no `.env.example` is needed because this prototype has no configurable secrets.
+
+## Execution guide
+
+```bash
+npm run dev
+npm test
+npm run build
+```
+
+Open the local URL printed by Vite, normally `http://localhost:5173/`. `npm test` runs the Vitest suite. `npm run build` runs TypeScript project checks and produces the browser bundle in `dist/`; that bundle is the compiled demonstration, not a backend or machine controller.
 
 ## Demo credentials
+
+These are public demo-only credentials seeded by the application:
 
 - Customer: `customer@smartbrew.demo` / `brew123`
 - Technician: `tech@smartbrew.demo` / `Tech123!`
 
-## Demonstration guide
+## Demonstrate and test the ten functionalities
 
-1. **Authentication and guest access:** Choose Customer sign in and use the demo account. Sign out, enter three incorrect customer passwords, and observe the guest fallback. Guests can still browse and order but cannot save private recipes.
-2. **Menu:** Search for “latte”, switch category filters, and open a drink to see price, estimated calories, availability, and customization.
-3. **Smart Picks:** Change flavor, temperature, goal, and city in the Smart Picks strip. Recommendations and reasons update. Disconnect the browser or block Open-Meteo to see the honest weather fallback.
-4. **Customization:** Change strength, milk, temperature, syrup, and shots. Totals and calories update immediately. Sign in as the customer and save a named recipe.
-5. **Personal recipes:** Open My recipes, then edit, delete (with confirmation), or Order again. Inventory is checked again when reordering.
-6. **Cart and order:** Add both saved and unsaved drinks. Adjust quantity, remove lines, and verify that stock is not consumed before payment.
-7. **Payment:** Continue to payment and select any simulated method. Choose `Declined` to demonstrate the no-stock-change path; choose `Approved` to complete one demo brew and deduct stock once.
-8. **Receipts:** After approval, choose QR code to generate a real QR image, Email for validated simulated delivery confirmation, No receipt to skip, or Print receipt for the browser print dialog.
-9. **Technician role:** Sign out, choose Tech access, and use the technician credentials. Invalid attempts never grant access; successful sign-in reveals the protected Technician console.
-10. **Technician console:** Refill or correct inventory and observe logs. In Maintenance, use “Simulate bin near capacity” to lock customer checkout, then empty the grounds bin. Run a diagnostic. In Logs, filter by severity or search text and clear filters.
+1. **Authentication and guest access:** Choose Customer sign in, use the customer credentials, sign out, then submit three wrong passwords. Verify guest mode is enabled and private recipe management remains unavailable.
+2. **Menu and availability:** Search `latte`, select category filters, and open a drink. Verify price, calories, and unavailable stock messaging. Use the technician flow to refill stock if needed.
+3. **Recommendations:** Change Smart Picks taste, temperature, calorie goal, and city. Verify three recommendations and reasons. Block the weather request or disconnect the network to verify the preference-only fallback.
+4. **Preferences:** Sign in, change the Smart Picks controls, reload the page, and verify the choices persist in browser localStorage.
+5. **Customization:** Configure milk, strength, syrup, and shots. Verify totals and calories change and that an unavailable recipe cannot be added.
+6. **Saved recipes:** As the customer, save a named configuration, open My recipes, edit/delete it, and use Order again. Verify reordering rechecks inventory.
+7. **Orders:** Add a configured drink, open Order review, change quantity, and verify the total. Confirm stock is not deducted before payment.
+8. **Payment and receipts:** Select payment, try Declined and verify no stock change, then Approved and verify one deduction. Choose QR, Email, No receipt, or Print receipt. QR generation and email are simulated/local behaviours.
+9. **Technician access:** Sign out, choose Technician / service, and use technician credentials. Verify invalid attempts never expose the console and valid access shows Service console.
+10. **Technician operations:** Refill or correct inventory, simulate a near-capacity grounds bin, clear it, run diagnostics, and filter/search Logs. Verify actions produce log entries and maintenance lock prevents customer checkout.
 
-## Structure and architecture
+Manual browser checks are required for visual layout, dialogs, browser printing, localStorage reset, and the live/fallback weather request; these are not covered by the unit tests.
 
-- `src/App.tsx` owns the browser UI state and sequential customer/service screens. It calls the domain and persistence helpers rather than duplicating business rules in the controls.
-- `src/domain.ts` contains pure rules for prices, calorie estimates, stock requirements, shortages, deductions, recommendations, and logs. These rules are covered by `src/domain.test.ts`.
-- `src/data.ts` contains the seeded drink programs, inventory, machine status, and initial diagnostic events.
-- `src/storage.ts` provides versioned localStorage persistence and the reset-to-seed operation.
-- `src/receipts.ts` creates QR data URLs for completed simulated orders.
-- `src/styles.css` defines the appliance casing, inset display, responsive control-panel layout, accessible focus states, and status tokens.
+## Known limitations
 
-The main operation is deliberately sequential: READY/menu, customer access when needed, drink configuration, order review, simulated payment, completed demo brew, and receipt choice. The step rail is informational and cannot bypass validation. Technician controls are rendered only for the authenticated technician role and are still guarded in the technician view.
+This is a front-end coursework demonstration. There is no physical machine, real brewing, secure authentication, server persistence, payment capability, email delivery, or equipment telemetry. Credentials and state are browser-local and not secure. Recommendations are deterministic rules, not an LLM. Weather depends on a public browser request and has a fallback. QR output encodes a simulated receipt. Facial-expression analysis, camera/NFC/card scanning, and a separate offline feature are not implemented.
 
-## Data reset and limitations
+## Project structure
 
-Use **Reset demo data** in the footer to restore seeded inventory, preferences, orders, machine status, and logs after confirmation. All mutable state is stored in versioned browser localStorage (`smartbrew-v1`); it is not secure authentication storage.
+See [PROJECT_FILE_MAP.md](./PROJECT_FILE_MAP.md) for verified feature-to-code traceability and execution paths. See [FEATURES_AND_ACCEPTANCE.md](./FEATURES_AND_ACCEPTANCE.md) for reviewer-oriented acceptance checklists.
 
-This is a coursework prototype: customer and technician authentication are front-end-only, payment is simulated, email is not sent, no physical machine is connected, recommendations use deterministic preferences/history/weather rules rather than a deployed LLM, and natural-language ordering is visibly marked **Coming Soon**. There is no camera, facial analysis, NFC, card scanning, or standalone offline mode. Inventory, logs, maintenance actions, and receipts are demonstration data stored in the browser and are not an equipment telemetry system.
+- [src/App.tsx](./src/App.tsx): single-page UI state, customer workflow, checkout, receipts, and technician console.
+- [src/domain.ts](./src/domain.ts): pure pricing, calories, inventory, recommendations, and logging rules.
+- [src/data.ts](./src/data.ts): catalogue and seeded machine data.
+- [src/storage.ts](./src/storage.ts): localStorage seed/load/save/reset.
+- [src/receipts.ts](./src/receipts.ts): local QR data URL generation.
+- [src/domain.test.ts](./src/domain.test.ts): Vitest domain coverage.
+- [src/styles.css](./src/styles.css): retro machine-screen styling and responsive layout.
 
 ## Troubleshooting
 
-- **Node version mismatch:** install Node 20.19+ or 22.12+, reopen the terminal, and run `npm install` again.
-- **`npm install` fails:** remove only the generated `node_modules` folder and rerun `npm install`; check network access.
-- **Weather does not load:** this is expected when the public API or network is unavailable; the app continues with preference and order-history recommendations.
-- **Stale demo state:** use Reset demo data in the footer, or clear the browser's site data/localStorage for the Vite origin.
+- If Node is rejected, install Node 20 LTS or another Node 18+ release and reopen the terminal.
+- If dependencies are missing, run `npm ci` from the repository root.
+- If weather is unavailable, this is an expected fallback; the rest of Smart Picks remains usable.
+- If old demo data is confusing, use **Reset demo data** in the footer or clear localStorage for the Vite origin.
+- If a port is busy, use the URL Vite prints after it selects another port.
+
+## Project status and verification
+
+The repository currently includes one automated Vitest file with six passing tests. The checks run for this audit were:
+
+- `npm test` - passed: 1 test file, 6 tests.
+- `npm run build` - passed: TypeScript check and Vite production build generated `dist/`.
+
+The earlier exploratory command `npm test -- --runInBand` was not used as a result because Vitest does not support that Jest option.
